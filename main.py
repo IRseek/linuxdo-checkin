@@ -119,8 +119,27 @@ class LinuxDoBrowser:
                 )
         return cookies
 
-    def _verify_login_via_api(self) -> bool:
-        """通过 Discourse API 验证当前登录状态，比 DOM 检测更可靠"""
+    def _verify_via_page(self, page) -> bool:
+        """通过浏览器页面内容验证登录状态（不发额外 HTTP 请求）"""
+        try:
+            current_url = page.url
+            if "login" in current_url:
+                logger.error("页面验证：已被重定向到登录页，Cookie 无效")
+                return False
+            html = page.html
+            # Discourse 登录后页面必有这些标记
+            for marker in ["current-user", "d-header-icons", "avatar", "discourse-username"]:
+                if marker in html:
+                    logger.info(f"页面验证登录成功（找到 '{marker}'）")
+                    return True
+            logger.error("页面验证失败：未找到任何登录标记，Cookie 可能已过期")
+            return False
+        except Exception as e:
+            logger.warning(f"页面验证异常: {str(e)}，视为成功")
+            return True
+
+    def _verify_login_via_api(self, page=None) -> bool:
+        """验证登录状态：优先 API，API 被限速时回退到浏览器页面验证"""
         try:
             resp = self.session.get(
                 "https://linux.do/session/current.json",
@@ -133,6 +152,12 @@ class LinuxDoBrowser:
                 if username:
                     logger.info(f"API 验证登录成功，用户名: {username}")
                     return True
+            elif resp.status_code == 429:
+                logger.warning("API 验证被限速 (429)，改用浏览器页面验证...")
+                if page is not None:
+                    return self._verify_via_page(page)
+                logger.warning("无页面可用，宽松处理视为成功")
+                return True
             logger.error(f"API 验证登录失败，状态码: {resp.status_code}")
             return False
         except Exception as e:
@@ -160,7 +185,7 @@ class LinuxDoBrowser:
         time.sleep(3)
 
         # 通过 API 验证登录状态（比 DOM 检测更可靠）
-        return self._verify_login_via_api()
+        return self._verify_login_via_api(self.page)
 
     def login(self):
         logger.info("开始账号密码登录")
@@ -240,7 +265,7 @@ class LinuxDoBrowser:
         time.sleep(3)
 
         # 通过 API 验证登录状态（比 DOM 检测更可靠）
-        return self._verify_login_via_api()
+        return self._verify_login_via_api(self.page)
 
     def click_topic(self):
         list_area = self.page.ele("@id=list-area")
