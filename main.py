@@ -119,6 +119,26 @@ class LinuxDoBrowser:
                 )
         return cookies
 
+    def _verify_login_via_api(self) -> bool:
+        """通过 Discourse API 验证当前登录状态，比 DOM 检测更可靠"""
+        try:
+            resp = self.session.get(
+                "https://linux.do/session/current.json",
+                impersonate="chrome136",
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                username = data.get("current_user", {}).get("username", "")
+                if username:
+                    logger.info(f"API 验证登录成功，用户名: {username}")
+                    return True
+            logger.error(f"API 验证登录失败，状态码: {resp.status_code}")
+            return False
+        except Exception as e:
+            logger.warning(f"API 验证登录异常: {str(e)}，跳过验证视为成功")
+            return True
+
     def login_with_cookies(self, cookie_str: str) -> bool:
         """使用手动设置的 Cookie 直接登录，跳过账号密码流程"""
         logger.info("检测到手动 Cookie，尝试 Cookie 登录...")
@@ -137,23 +157,10 @@ class LinuxDoBrowser:
         self.page.set.cookies(dp_cookies)
         logger.info("Cookie 设置完成，导航至 linux.do...")
         self.page.get(HOME_URL)
-        time.sleep(5)
+        time.sleep(3)
 
-        # 验证登录状态
-        try:
-            user_ele = self.page.ele("@id=current-user")
-        except Exception as e:
-            logger.warning(f"Cookie 登录验证异常: {str(e)}")
-            return True
-        if not user_ele:
-            if "avatar" in self.page.html:
-                logger.info("Cookie 登录验证成功 (通过 avatar)")
-                return True
-            logger.error("Cookie 登录验证失败 (未找到 current-user)，Cookie 可能已过期")
-            return False
-        else:
-            logger.info("Cookie 登录验证成功")
-            return True
+        # 通过 API 验证登录状态（比 DOM 检测更可靠）
+        return self._verify_login_via_api()
 
     def login(self):
         logger.info("开始账号密码登录")
@@ -230,23 +237,10 @@ class LinuxDoBrowser:
 
         logger.info("Cookie 设置完成，导航至 linux.do...")
         self.page.get(HOME_URL)
+        time.sleep(3)
 
-        time.sleep(5)
-        try:
-            user_ele = self.page.ele("@id=current-user")
-        except Exception as e:
-            logger.warning(f"登录验证失败: {str(e)}")
-            return True
-        if not user_ele:
-            # Fallback check for avatar
-            if "avatar" in self.page.html:
-                logger.info("登录验证成功 (通过 avatar)")
-                return True
-            logger.error("登录验证失败 (未找到 current-user)")
-            return False
-        else:
-            logger.info("登录验证成功")
-            return True
+        # 通过 API 验证登录状态（比 DOM 检测更可靠）
+        return self._verify_login_via_api()
 
     def click_topic(self):
         list_area = self.page.ele("@id=list-area")
