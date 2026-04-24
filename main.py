@@ -249,12 +249,17 @@ class LinuxDoBrowser:
             return True
 
     def click_topic(self):
-        topic_list = self.page.ele("@id=list-area").eles(".:title")
+        list_area = self.page.ele("@id=list-area")
+        if not list_area:
+            logger.error("未找到 list-area 元素，页面可能未正确加载或未登录")
+            return False
+        topic_list = list_area.eles(".:title")
         if not topic_list:
             logger.error("未找到主题帖")
             return False
-        logger.info(f"发现 {len(topic_list)} 个主题帖，随机选择10个")
-        for topic in random.sample(topic_list, 10):
+        count = min(10, len(topic_list))
+        logger.info(f"发现 {len(topic_list)} 个主题帖，随机选择 {count} 个")
+        for topic in random.sample(topic_list, count):
             self.click_one_topic(topic.attr("href"))
         return True
 
@@ -313,7 +318,8 @@ class LinuxDoBrowser:
             else:
                 login_res = self.login()
             if not login_res:  # 登录
-                logger.warning("登录验证失败")
+                logger.warning("登录验证失败，终止后续操作")
+                return
 
             if BROWSE_ENABLED:
                 click_topic_res = self.click_topic()  # 点击主题
